@@ -52,12 +52,32 @@ form's prefilled defaults and never guesses a value.
 
 ## Install
 
+One line, straight from GitHub:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ClutchandCooffical/meso-pi/main/install-remote.sh | bash
+```
+
+That downloads the latest meso-pi, extracts it, and runs the installer
+into `/home/pi/meso`. For another directory, pass it as an argument:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ClutchandCooffical/meso-pi/main/install-remote.sh | bash -s -- /opt/meso
+```
+
+Or install from a downloaded tarball:
+
 ```sh
 tar xzf meso-pi-v1.0.2.tar.gz
 cd meso-pi-v1.0.2
 ./install.sh            # installs to /home/pi/meso
 ./install.sh /opt/meso  # or another directory
 ```
+
+(If you cloned the repo instead of using the tarball, run the installer
+with `bash install.sh`: the executable bit does not survive a git clone
+or a GitHub archive download. The installer itself makes the installed
+scripts executable.)
 
 The installer copies the scripts, creates `meso.conf` from the example
 (`LIVE_SUBMIT=false`, shadow mode), and installs the cron entries: four
