@@ -1,6 +1,16 @@
 # meso-pi cron entries. __HOME__ is replaced with the install directory
 # by install.sh. Times are the Pi's local time.
-# Submit a reading once an hour, at :12 past the hour. The script itself
-# enforces the 50-minute minimum interval, so a run that lands too soon
-# after the last submission skips quietly.
-12 * * * * python3 __HOME__/scripts/meso-submit.py >> __HOME__/log/meso-submit.log 2>&1
+#
+# Cadence (v1.0.1): four submissions a day, one after each wx-brief
+# publish (05:00, 10:00, 15:00, 20:00), plus hourly submissions while
+# severe weather mode is active. The script itself enforces the
+# 50-minute minimum interval, so a run that lands too soon after the
+# last submission skips quietly.
+#
+# Brief-time runs (4x/day). These submit on the brief schedule.
+12 5,10,15,20 * * * python3 __HOME__/scripts/meso-submit.py >> __HOME__/log/meso-submit.log 2>&1
+# Severe-weather runs (hourly, except the brief hours above). These only
+# submit when SEVERE_STATE_FILE says severe mode is active; otherwise
+# they skip silently. The brief hours are excluded here because the
+# brief-time run above already covers them.
+12 0-4,6-9,11-14,16-19,21-23 * * * python3 __HOME__/scripts/meso-submit.py --require-severe >> __HOME__/log/meso-submit.log 2>&1

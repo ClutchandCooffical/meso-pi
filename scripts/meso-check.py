@@ -34,6 +34,8 @@ def main():
     print(f"  WXID:    {cfg['WXID'] or '(not set)'}")
     print(f"  source:  {cfg['SOURCE']}")
     print(f"  live submit: {cfg['LIVE_SUBMIT']}")
+    print(f"  severe state file: {cfg.get('SEVERE_STATE_FILE') or '(not set)'}")
+    print(f"  severe mode active: {mc.severe_mode_active(cfg)}")
     print()
 
     if not cfg["WXID"]:

@@ -14,6 +14,10 @@ Behaviour:
     values. Fails loudly if the station cannot be read.
   - Skips silently when the last successful submission is newer than
     MIN_INTERVAL_MINUTES (default 50), unless --force is given.
+  - --require-severe: only submit when severe weather mode is active
+    (per SEVERE_STATE_FILE, the wx-brief-pi severe-mode state). Used by
+    the hourly cron entry; the four brief-time runs submit without it.
+    Skips silently when severe mode is not active.
   - In shadow mode (LIVE_SUBMIT=false, the default) it builds the payload,
     writes it to shadow/last-dry-run.json, prints it, and submits nothing.
   - In live mode (LIVE_SUBMIT=true) it unlocks the WXID with the station
@@ -40,6 +44,9 @@ def parse_args():
                    help="build the payload and print it; submit nothing")
     p.add_argument("--force", action="store_true",
                    help="ignore the minimum-interval dedupe")
+    p.add_argument("--require-severe", action="store_true",
+                   help="only submit when severe mode is active "
+                   "(per SEVERE_STATE_FILE); skip silently otherwise")
     p.add_argument("--temp", type=float, help="temperature F (SOURCE=args)")
     p.add_argument("--humidity", type=float, help="humidity %% (SOURCE=args)")
     p.add_argument("--wspd", type=float, help="wind speed mph (SOURCE=args)")
@@ -100,6 +107,12 @@ def main():
     except ValueError:
         mc.log("ERROR: LATITUDE/LONGITUDE must be numbers.")
         return 1
+
+    # Severe-only runs (--require-severe, the hourly cron entry) submit
+    # only while severe mode is active. Check before reading the station.
+    if args.require_severe and not mc.severe_mode_active(cfg):
+        mc.log("SKIP: --require-severe and severe mode is not active.")
+        return 0
 
     # Dedupe: never submit more than once per MIN_INTERVAL_MINUTES.
     state = mc.read_json_file(cfg["STATE_FILE"], {}) or {}

@@ -34,7 +34,7 @@ STATE_DIR = os.path.join(HOME, "state")
 SHADOW_DIR = os.path.join(HOME, "shadow")
 LOG_DIR = os.path.join(HOME, "log")
 
-USER_AGENT = "meso-pi/1.0 (Midwest Meso Reporting submitter)"
+USER_AGENT = "meso-pi/1.0.1 (Midwest Meso Reporting submitter)"
 
 # The Meso conditions dropdown. The station's free-form condition text is
 # mapped onto one of these by map_condition().
@@ -60,6 +60,11 @@ DEFAULTS = {
     "LIVE_SUBMIT": "false",
     "MIN_INTERVAL_MINUTES": "50",
     "STATE_FILE": os.path.join(STATE_DIR, "meso-last.json"),
+    # Severe-mode state file. The default is the standard wx-brief-pi
+    # location; the hourly --require-severe cron entry only submits when
+    # this file says severe mode is active. Set it to another path, or
+    # blank to disable severe-mode submissions, in meso.conf.
+    "SEVERE_STATE_FILE": "/home/pi/wx-brief/state/severe-mode-state.json",
 }
 
 
@@ -115,6 +120,24 @@ def read_password(path):
         return pw or None
     except OSError:
         return None
+
+
+def severe_mode_active(cfg):
+    """Is severe weather mode active, per the wx-brief-pi state file?
+
+    Reads cfg["SEVERE_STATE_FILE"] (default: the standard wx-brief-pi
+    location) and returns True only when it parses as JSON with
+    {"active": true}. Anything else — missing file, bad JSON, blank path,
+    active false — is not severe. Fails closed: when we cannot tell,
+    we do not submit on the severe-only runs.
+    """
+    path = (cfg.get("SEVERE_STATE_FILE") or "").strip()
+    if not path:
+        return False
+    data = read_json_file(path)
+    if not isinstance(data, dict):
+        return False
+    return data.get("active") is True
 
 
 # ---------------------------------------------------------------- station

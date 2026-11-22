@@ -1,4 +1,4 @@
-# meso-pi v1.0.0
+# meso-pi v1.0.1
 
 Submit your weather station's readings to the **Midwest Meso Reporting** app
 (https://weather-reporter-midwestmesoproject.replit.app/) automatically,
@@ -15,11 +15,13 @@ bundle on Nov 21, 2026, and the read path was verified live:
 
 ## What it does
 
-Every hour, `meso-submit.py` pulls fresh readings from your weather station,
-builds a Meso observation, and submits it — but only if at least
-`MIN_INTERVAL_MINUTES` (default 50) have passed since the last successful
-submission, so it never spams the project. It stays silent on success and
-fails loudly (with the reason) when something is wrong.
+Four times a day, `meso-submit.py` pulls fresh readings from your weather
+station, builds a Meso observation, and submits it — once after each
+wx-brief publish (05:00, 10:00, 15:00, 20:00 local), at 12 minutes past
+the hour. While severe weather mode is active it submits hourly instead.
+It never submits more than once per `MIN_INTERVAL_MINUTES` (default 50),
+so it never spams the project. It stays silent on success and fails
+loudly (with the reason) when something is wrong.
 
 What it sends, every time: temperature, humidity, wind speed and direction,
 barometric pressure, weather conditions, today's rainfall total and the
@@ -31,8 +33,9 @@ form's prefilled defaults and never guesses a value.
 
 - It does not replace the Meso website. You still need your WXID and station
   password from the Meso group, and you can always check your records there.
-- It does not read SPC outlooks or NWS alerts. If you want hourly submissions
-  during severe weather, run it more often (see "Severe weather" below).
+- It does not read SPC outlooks or NWS alerts itself. Severe mode comes
+  from wx-brief-pi's severe-mode state file (see "Severe weather" below);
+  without it, submissions stay on the four-a-day schedule.
 - It does not share anything. Your password stays on your machine, in a file
   only you can read, and the package never prints it.
 
@@ -51,16 +54,17 @@ form's prefilled defaults and never guesses a value.
 ## Install
 
 ```sh
-tar xzf meso-pi-v1.0.0.tar.gz
-cd meso-pi-v1.0.0
+tar xzf meso-pi-v1.0.1.tar.gz
+cd meso-pi-v1.0.1
 ./install.sh            # installs to /home/pi/meso
 ./install.sh /opt/meso  # or another directory
 ```
 
 The installer copies the scripts, creates `meso.conf` from the example
-(`LIVE_SUBMIT=false`, shadow mode), and installs an hourly cron entry that
-runs `meso-submit.py` at 12 minutes past each hour. It never overwrites an
-existing `meso.conf`.
+(`LIVE_SUBMIT=false`, shadow mode), and installs the cron entries: four
+brief-time runs a day (05:12, 10:12, 15:12, 20:12 local) plus an hourly
+severe-mode run. It never overwrites an existing `meso.conf`; on an
+upgrade it appends the new `SEVERE_STATE_FILE` setting if it is missing.
 
 ## Configure
 
@@ -77,6 +81,7 @@ Edit `meso.conf` and fill in your own values:
 | `PASSWORD_FILE` | Where the station password lives. Leave the default. |
 | `LIVE_SUBMIT` | `false` until you have tested (shadow mode). Flip to `true` for cutover. |
 | `MIN_INTERVAL_MINUTES` | Minimum minutes between submissions. Default 50. |
+| `SEVERE_STATE_FILE` | Path to a JSON file with `{"active": true/false}` that says whether severe weather mode is on. Default is the standard wx-brief-pi location. The hourly severe run only submits while it is active. Leave blank to disable severe-mode submissions. |
 | `MESO_BASE_URL` | The Meso app address. Change only if the app moves. |
 
 Then set the password (it is read silently, never echoed, stored mode 0600):
@@ -158,20 +163,27 @@ When the dry runs look right:
 2. Run one live test: `python3 scripts/meso-submit.py --force`
 3. Check the Meso app's Records table for your WXID. The new record should
    be the top row, with your values.
-4. Leave the hourly cron running. It submits at most once per 50 minutes
-   and stays silent on success.
+4. Leave the cron entries running. They submit four times a day, hourly
+   while severe mode is active, at most once per 50 minutes, and stay
+   silent on success.
 
 To go back to shadow mode at any time, set `LIVE_SUBMIT=false` again. The
 cron entry keeps running but submits nothing.
 
 ## Severe weather
 
-By default the package submits at most once an hour (cron at :12, 50-minute
-minimum interval). During severe weather, if you want readings more often,
-add a second cron line that runs every 30 minutes, or run
-`meso-submit.py` by hand. The 50-minute minimum interval still applies
-unless you pass `--force`, so do not lower `MIN_INTERVAL_MINUTES` below 50
-without checking with the Meso group first.
+The normal cadence is four submissions a day, after the 05:00, 10:00,
+15:00, and 20:00 briefs. While severe weather mode is active, an hourly
+cron entry also runs `meso-submit.py --require-severe`, which submits
+once an hour. Severe mode is read from `SEVERE_STATE_FILE` (default:
+the wx-brief-pi severe-mode state file, `/home/pi/wx-brief/state/
+severe-mode-state.json`). If that file is missing, unreadable, or says
+severe mode is not active, the severe runs skip silently. The 50-minute
+minimum interval still applies unless you pass `--force`, so do not
+lower `MIN_INTERVAL_MINUTES` below 50 without checking with the Meso
+group first. If you do not run wx-brief-pi, point `SEVERE_STATE_FILE`
+at your own severe-mode state file, or leave it blank and the package
+stays on the four-a-day schedule.
 
 ## Files
 
@@ -183,7 +195,7 @@ without checking with the Meso group first.
 | `set-password.sh` | Stores the station password (mode 0600, never echoed). |
 | `meso.conf` | Your configuration (created by install.sh, never overwritten). |
 | `meso.conf.example` | The config template with every setting documented. |
-| `meso.cron` | The hourly cron entry installed by install.sh. |
+| `meso.cron` | The cron entries installed by install.sh (4 brief-time runs a day plus an hourly severe-mode run). |
 | `state/meso-last.json` | Watermark: last successful submission time and values. |
 | `shadow/last-dry-run.json` | The most recent dry-run payload. |
 | `log/meso-submit.log` | Cron output from meso-submit.py. |
@@ -213,7 +225,7 @@ without checking with the Meso group first.
   last success. Runs that land inside the 50-minute interval skip quietly
   by design; that is not a failure.
 - **The Meso app is down or moves** — the submit fails loudly and the next
-  hourly run retries. If the app moves to a new address, update
+  scheduled run retries. If the app moves to a new address, update
   `MESO_BASE_URL` in `meso.conf`.
 
 ## Security
@@ -229,6 +241,12 @@ without checking with the Meso group first.
 
 ## Version history
 
+- **v1.0.1 (Nov 21, 2026)** — Cadence fix. v1.0.0 submitted once an hour,
+  every hour. v1.0.1 submits four times a day (after the 05:00, 10:00,
+  15:00, and 20:00 briefs), plus hourly while severe weather mode is
+  active (read from wx-brief-pi's severe-mode state file, new
+  `--require-severe` flag and `SEVERE_STATE_FILE` setting). The
+  installer appends `SEVERE_STATE_FILE` to an existing meso.conf.
 - **v1.0.0 (Nov 21, 2026)** — First release. API identified from the app's
   own JavaScript; read path verified live; unlock + submit flow specified
   from the app's code and tested end to end on the author's station.

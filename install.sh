@@ -1,7 +1,7 @@
 #!/bin/bash
 # meso-pi installer. Run on the Raspberry Pi (or any Linux box):
-#   tar xzf meso-pi-v1.0.0.tar.gz
-#   cd meso-pi-v1.0.0
+#   tar xzf meso-pi-v1.0.1.tar.gz
+#   cd meso-pi-v1.0.1
 #   ./install.sh            (installs to /home/pi/meso)
 #   ./install.sh /opt/meso  (or another directory)
 # Then: edit meso.conf, run ./set-password.sh, test in shadow mode,
@@ -11,7 +11,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST="${1:-/home/pi/meso}"
 
-echo "Installing meso-pi v1.0.0 to $DEST"
+echo "Installing meso-pi v1.0.1 to $DEST"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "ERROR: python3 not found. Install it first (sudo apt install python3)."
@@ -37,6 +37,19 @@ if [ ! -f "$DEST/meso.conf" ]; then
   echo "Created $DEST/meso.conf from the example (LIVE_SUBMIT=false)."
 else
   echo "Keeping existing $DEST/meso.conf (not overwritten)."
+  # v1.0.1 adds SEVERE_STATE_FILE. Append it to an older config that
+  # lacks it, so the severe-only cron entry can work. The default is the
+  # standard wx-brief-pi location; edit it if yours differs.
+  if ! grep -q "^SEVERE_STATE_FILE=" "$DEST/meso.conf"; then
+    {
+      echo ""
+      echo "# Severe-mode state file (added by the v1.0.1 installer)."
+      echo "# The hourly --require-severe cron entry only submits when"
+      echo "# this file says severe mode is active."
+      echo "SEVERE_STATE_FILE=/home/pi/wx-brief/state/severe-mode-state.json"
+    } >> "$DEST/meso.conf"
+    echo "Added SEVERE_STATE_FILE to $DEST/meso.conf."
+  fi
 fi
 
 # Install cron entries, preserving any other cron jobs.

@@ -47,3 +47,10 @@ MIN_INTERVAL_MINUTES=50
 
 # Where the last-submission watermark lives.
 STATE_FILE=__HOME__/state/meso-last.json
+
+# Severe-mode state file (v1.0.1). The hourly --require-severe cron entry
+# only submits when this file says severe mode is active. The default is
+# the standard wx-brief-pi location. If you do not run wx-brief-pi, point
+# it at your own severe-mode state file (JSON with {"active": true/false}),
+# or leave it blank to disable severe-mode submissions entirely.
+SEVERE_STATE_FILE=/home/pi/wx-brief/state/severe-mode-state.json
