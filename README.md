@@ -1,4 +1,4 @@
-# meso-pi v1.0.2
+# meso-pi v1.0.3
 
 Submit your weather station's readings to the **Midwest Meso Reporting** app
 (https://weather-reporter-midwestmesoproject.replit.app/) automatically,
@@ -68,8 +68,8 @@ curl -fsSL https://raw.githubusercontent.com/ClutchandCooffical/meso-pi/main/ins
 Or install from a downloaded tarball:
 
 ```sh
-tar xzf meso-pi-v1.0.2.tar.gz
-cd meso-pi-v1.0.2
+tar xzf meso-pi-v1.0.3.tar.gz
+cd meso-pi-v1.0.3
 ./install.sh            # installs to /home/pi/meso
 ./install.sh /opt/meso  # or another directory
 ```
@@ -93,8 +93,9 @@ Edit `meso.conf` and fill in your own values:
 | Setting | What to put |
 |---|---|
 | `WXID` | Your station ID, e.g. `MMP-MO-N7`. It is in the "Reporting WXID" dropdown on the Meso app. |
-| `SOURCE` | `weewx`, `json`, or `args` (see below). |
-| `STATION_URL` | Your WeeWX homepage URL (SOURCE=weewx). |
+| `SOURCE` | `weewx`, `sqlite`, `json`, or `args` (see below). |
+| `STATION_URL` | Your WeeWX homepage URL (SOURCE=weewx; also the fallback for SOURCE=sqlite). |
+| `WEEWX_DB` | WeeWX archive database path (SOURCE=sqlite). Default `/var/lib/weewx/weewx.sdb`. |
 | `STATION_JSON` | Path to a JSON file with readings (SOURCE=json). |
 | `LATITUDE`, `LONGITUDE` | Your station's fixed GPS coordinates. |
 | `NOTES` | The notes text posted with every reading. Use your own attribution, e.g. `data gathered and entered from https://your-station.example.com by Your Name`. |
@@ -290,6 +291,20 @@ first.
 
 ## Version history
 
+- **v1.0.3 (Nov 22, 2026)** — SQLite station source. New `SOURCE=sqlite`
+  reads the latest archive record straight from the WeeWX database
+  (`WEEWX_DB`, default `/var/lib/weewx/weewx.sdb`, read-only) instead of
+  scraping the homepage: temperature, humidity, wind, sea-level pressure
+  (barometer, falling back to pressure), and rain since local midnight
+  (sum of the per-interval rain column). The newest record must be under
+  30 minutes old. Conditions come from the OpenWeatherService column
+  `ow_weather_main` on the newest row when present, else from the
+  homepage. When the database cannot be read and `STATION_URL` is set,
+  meso-submit.py falls back to the homepage scrape (logged as a warning)
+  rather than skipping the submission. The installer appends `WEEWX_DB`
+  to an existing meso.conf. To switch an installed v1.0.2 over, upgrade
+  and set `SOURCE=sqlite` in meso.conf (keep `STATION_URL` set as the
+  fallback), then run one shadow test.
 - **v1.0.2 (Nov 21, 2026)** — Independent severe check. meso-pi no longer
   depends on wx-brief-pi for severe mode: `meso-severe-check.py` runs
   every 30 minutes, reads the SPC Day 1 outlook (exact point-in-polygon)

@@ -34,7 +34,7 @@ STATE_DIR = os.path.join(HOME, "state")
 SHADOW_DIR = os.path.join(HOME, "shadow")
 LOG_DIR = os.path.join(HOME, "log")
 
-USER_AGENT = "meso-pi/1.0.2 (Midwest Meso Reporting submitter)"
+USER_AGENT = "meso-pi/1.0.3 (Midwest Meso Reporting submitter)"
 
 # The Meso conditions dropdown. The station's free-form condition text is
 # mapped onto one of these by map_condition().
@@ -54,6 +54,11 @@ DEFAULTS = {
     "SOURCE": "weewx",
     "STATION_URL": "",
     "STATION_JSON": "",
+    # WeeWX archive database (SQLite) for SOURCE=sqlite. Default is the
+    # standard WeeWX 5.x location on the station Pi (weewx.conf:
+    # SQLITE_ROOT /var/lib/weewx, database weewx.sdb, table "archive").
+    # Read-only; the file is never written to.
+    "WEEWX_DB": "/var/lib/weewx/weewx.sdb",
     "LATITUDE": "",
     "LONGITUDE": "",
     "NOTES": "",
@@ -307,6 +312,107 @@ def station_read_weewx(url):
         "humidity_s": hum_s,
         "rain": num(rain_s, "rain"),
         "rain_s": rain_s.split()[0],
+        "fetched_at": time.time(),
+    }
+
+
+def station_read_sqlite(cfg):
+    """Read the latest station values from the WeeWX archive database.
+
+    Opens WEEWX_DB read-only (table "archive", US units) and returns the
+    same dict shape as station_read_weewx(). The newest archive record
+    supplies temperature, humidity, wind, and sea-level pressure
+    (barometer, falling back to pressure); rain is the sum of the
+    per-interval rain column since local midnight. The newest record
+    must be under 30 minutes old, or the read fails.
+
+    Conditions come from the OpenWeatherService column ow_weather_main
+    on the newest row when present (values like Clear, Clouds, Rain,
+    Thunderstorm map through map_condition()). When that column is
+    missing or empty, the condition text is scraped from STATION_URL
+    (homepage only, if set); otherwise "Cloudy".
+
+    Raises on any failure (missing file, locked database, stale latest
+    record, missing values) so the caller can fall back to the homepage
+    scrape. The database is never written to.
+    """
+    import sqlite3
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _ZI
+
+    db = (cfg.get("WEEWX_DB") or "").strip()
+    if not db:
+        raise ValueError("WEEWX_DB is not set")
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+    except Exception as e:
+        raise RuntimeError(f"cannot open WeeWX database {db}: {e}")
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(archive)")}
+        if "dateTime" not in cols or "outTemp" not in cols:
+            raise RuntimeError("WeeWX archive table lacks dateTime/outTemp")
+        fields = ["dateTime", "outTemp", "outHumidity", "windSpeed",
+                  "windDir", "barometer", "pressure", "rain"]
+        if "ow_weather_main" in cols:
+            fields.append("ow_weather_main")
+        q = ("SELECT " + ", ".join(fields) + " FROM archive "
+             "ORDER BY dateTime DESC LIMIT 1")
+        row = conn.execute(q).fetchone()
+        if row is None:
+            raise RuntimeError("WeeWX archive is empty")
+        rec = dict(zip(fields, row))
+        now = _dt.now(_ZI("America/Chicago"))
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        rain_row = conn.execute(
+            "SELECT COALESCE(SUM(rain), 0) FROM archive "
+            "WHERE dateTime >= ? AND rain IS NOT NULL",
+            (int(midnight.timestamp()),)).fetchone()
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"WeeWX archive query failed: {e}")
+    finally:
+        conn.close()
+
+    latest_at = rec["dateTime"]
+    if latest_at is None:
+        raise RuntimeError("latest archive record has no timestamp")
+    age_min = (time.time() - latest_at) / 60.0
+    if age_min > 30:
+        raise RuntimeError(f"latest archive record is {age_min:.0f} min old")
+    for key in ("outTemp", "outHumidity", "windSpeed"):
+        if rec.get(key) is None:
+            raise RuntimeError(f"latest archive record has no {key}")
+    pressure = rec.get("barometer")
+    if pressure is None:
+        pressure = rec.get("pressure")
+    if pressure is None:
+        raise RuntimeError("latest archive record has no barometer/pressure")
+    wdir_deg = rec.get("windDir")
+    cond = rec.get("ow_weather_main") or ""
+    if not str(cond).strip() and cfg.get("STATION_URL"):
+        # Conditions live in the OpenWeather column; when it is empty,
+        # take the condition text off the homepage and nothing else.
+        try:
+            cond = station_read_weewx(cfg["STATION_URL"])["cond"]
+        except Exception:
+            cond = "Cloudy"
+    if not str(cond).strip():
+        cond = "Cloudy"
+    rain = float(rain_row[0]) if rain_row and rain_row[0] is not None else 0.0
+    return {
+        "temp": float(rec["outTemp"]),
+        "temp_s": str(rec["outTemp"]),
+        "cond": str(cond),
+        "wdir": "" if wdir_deg is None else str(wdir_deg),
+        "wspd": float(rec["windSpeed"]),
+        "wspd_s": str(rec["windSpeed"]),
+        "pressure": float(pressure),
+        "pressure_s": str(pressure),
+        "humidity": float(rec["outHumidity"]),
+        "humidity_s": str(rec["outHumidity"]),
+        "rain": rain,
+        "rain_s": str(rain),
         "fetched_at": time.time(),
     }
 

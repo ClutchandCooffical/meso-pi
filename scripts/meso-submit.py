@@ -11,7 +11,9 @@ Usage:
 Behaviour:
   - Loads meso.conf (WXID, station source, GPS, notes, LIVE_SUBMIT).
   - Pulls fresh station readings at run time; never uses stale or guessed
-    values. Fails loudly if the station cannot be read.
+    values. Fails loudly if the station cannot be read. SOURCE=sqlite
+    reads the WeeWX archive database and falls back to the homepage
+    scrape (logged) when the database cannot be read.
   - Skips silently when the last successful submission is newer than
     MIN_INTERVAL_MINUTES (default 50), unless --force is given.
   - --require-severe: only submit when severe weather mode is active
@@ -84,8 +86,21 @@ def read_station(cfg, args):
         if not cfg["STATION_URL"]:
             raise ValueError("SOURCE=weewx needs STATION_URL set in meso.conf")
         return mc.station_read_weewx(cfg["STATION_URL"])
+    if source == "sqlite":
+        # Read the WeeWX archive database. If the database cannot be
+        # read and a homepage URL is configured, fall back to scraping
+        # it (logged as a warning) rather than skipping the submission;
+        # a missing database alone never silently drops a reading.
+        try:
+            return mc.station_read_sqlite(cfg)
+        except Exception as e:
+            if not cfg.get("STATION_URL"):
+                raise
+            mc.log(f"WARNING: sqlite read failed ({e}); falling back to "
+                   "the homepage scrape.")
+            return mc.station_read_weewx(cfg["STATION_URL"])
     raise ValueError(f"unknown SOURCE {cfg['SOURCE']!r} "
-                     "(use weewx, json, or args)")
+                     "(use weewx, sqlite, json, or args)")
 
 
 def main():

@@ -1,7 +1,7 @@
 #!/bin/bash
 # meso-pi installer. Run on the Raspberry Pi (or any Linux box):
-#   tar xzf meso-pi-v1.0.2.tar.gz
-#   cd meso-pi-v1.0.2
+#   tar xzf meso-pi-v1.0.3.tar.gz
+#   cd meso-pi-v1.0.3
 #   ./install.sh            (installs to /home/pi/meso)
 #   ./install.sh /opt/meso  (or another directory)
 # Then: edit meso.conf, run ./set-password.sh, test in shadow mode,
@@ -11,7 +11,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST="${1:-/home/pi/meso}"
 
-echo "Installing meso-pi v1.0.2 to $DEST"
+echo "Installing meso-pi v1.0.3 to $DEST"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "ERROR: python3 not found. Install it first (sudo apt install python3)."
@@ -59,6 +59,19 @@ else
       echo "ALERT_ZONE="
     } >> "$DEST/meso.conf"
     echo "Added ALERT_ZONE to $DEST/meso.conf."
+  fi
+  # v1.0.3 adds WEEWX_DB. Append it to an older config that lacks it.
+  # Only used when SOURCE=sqlite; the homepage scrape stays the
+  # fallback when the database cannot be read.
+  if ! grep -q "^WEEWX_DB=" "$DEST/meso.conf"; then
+    {
+      echo ""
+      echo "# WeeWX archive database (added by the v1.0.3 installer)."
+      echo "# Used when SOURCE=sqlite. Default is the standard WeeWX"
+      echo "# 5.x location on the station Pi."
+      echo "WEEWX_DB=/var/lib/weewx/weewx.sdb"
+    } >> "$DEST/meso.conf"
+    echo "Added WEEWX_DB to $DEST/meso.conf."
   fi
 fi
 

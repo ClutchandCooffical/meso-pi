@@ -15,6 +15,9 @@ PASSWORD_FILE=__HOME__/.meso-password
 
 # How this install gets its readings. One of:
 #   weewx  - scrape a WeeWX Belchertown homepage (STATION_URL below)
+#   sqlite - read the WeeWX archive database (WEEWX_DB below); falls
+#            back to the homepage scrape (STATION_URL) when the database
+#            cannot be read
 #   json   - read a JSON file (STATION_JSON below)
 #   args   - pass readings on the meso-submit.py command line
 SOURCE=weewx
@@ -22,6 +25,14 @@ SOURCE=weewx
 # Your weather station homepage (SOURCE=weewx). Must be a WeeWX
 # Belchertown skin page, the same kind wx-brief-pi reads.
 STATION_URL=
+
+# WeeWX archive database (SOURCE=sqlite). Default is the standard
+# WeeWX 5.x location on the station Pi (weewx.conf: SQLITE_ROOT
+# /var/lib/weewx, database weewx.sdb, table "archive"). Read-only; the
+# file is never written to. The newest record must be under 30 minutes
+# old. Conditions come from the OpenWeatherService column
+# ow_weather_main on the newest row when present, else from STATION_URL.
+WEEWX_DB=/var/lib/weewx/weewx.sdb
 
 # Path to a JSON file with the readings (SOURCE=json). Keys:
 #   temp, humidity, wspd (required numbers)
