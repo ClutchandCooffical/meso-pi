@@ -49,8 +49,15 @@ MIN_INTERVAL_MINUTES=50
 STATE_FILE=__HOME__/state/meso-last.json
 
 # Severe-mode state file (v1.0.1). The hourly --require-severe cron entry
-# only submits when this file says severe mode is active. The default is
-# the standard wx-brief-pi location. If you do not run wx-brief-pi, point
-# it at your own severe-mode state file (JSON with {"active": true/false}),
-# or leave it blank to disable severe-mode submissions entirely.
+# only submits when severe mode is active. The default is the standard
+# wx-brief-pi location; meso-pi's own state/severe-mode.json (written by
+# meso-severe-check.py) is checked too, so severe mode works even without
+# wx-brief-pi. Set this to another path, or leave it blank to rely only
+# on meso-pi's own check.
 SEVERE_STATE_FILE=/home/pi/wx-brief/state/severe-mode-state.json
+
+# NWS alert zone for the independent severe check (v1.0.2), e.g. MOC083.
+# Leave blank to derive it from LATITUDE/LONGITUDE via
+# api.weather.gov/points/ (cached in state/nws-zone.json). Set it
+# explicitly if the derivation fails or you already know your zone.
+ALERT_ZONE=

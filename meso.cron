@@ -1,16 +1,23 @@
 # meso-pi cron entries. __HOME__ is replaced with the install directory
 # by install.sh. Times are the Pi's local time.
 #
-# Cadence (v1.0.1): four submissions a day, one after each wx-brief
+# Cadence (v1.0.2): four submissions a day, one after each wx-brief
 # publish (05:00, 10:00, 15:00, 20:00), plus hourly submissions while
 # severe weather mode is active. The script itself enforces the
 # 50-minute minimum interval, so a run that lands too soon after the
 # last submission skips quietly.
 #
+# Severe-mode watchdog (every 30 minutes). Checks the SPC Day 1 outlook
+# and the NWS alerts for the station's county zone, and writes
+# state/severe-mode.json. This is how meso-pi knows severe mode is on
+# when wx-brief-pi is not running.
+*/30 * * * * python3 __HOME__/scripts/meso-severe-check.py >> __HOME__/log/meso-severe-check.log 2>&1
+#
 # Brief-time runs (4x/day). These submit on the brief schedule.
 12 5,10,15,20 * * * python3 __HOME__/scripts/meso-submit.py >> __HOME__/log/meso-submit.log 2>&1
 # Severe-weather runs (hourly, except the brief hours above). These only
-# submit when SEVERE_STATE_FILE says severe mode is active; otherwise
-# they skip silently. The brief hours are excluded here because the
-# brief-time run above already covers them.
+# submit when severe mode is active (wx-brief-pi's state file, or
+# meso-pi's own state/severe-mode.json); otherwise they skip silently.
+# The brief hours are excluded here because the brief-time run above
+# already covers them.
 12 0-4,6-9,11-14,16-19,21-23 * * * python3 __HOME__/scripts/meso-submit.py --require-severe >> __HOME__/log/meso-submit.log 2>&1

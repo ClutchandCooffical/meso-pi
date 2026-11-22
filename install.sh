@@ -1,7 +1,7 @@
 #!/bin/bash
 # meso-pi installer. Run on the Raspberry Pi (or any Linux box):
-#   tar xzf meso-pi-v1.0.1.tar.gz
-#   cd meso-pi-v1.0.1
+#   tar xzf meso-pi-v1.0.2.tar.gz
+#   cd meso-pi-v1.0.2
 #   ./install.sh            (installs to /home/pi/meso)
 #   ./install.sh /opt/meso  (or another directory)
 # Then: edit meso.conf, run ./set-password.sh, test in shadow mode,
@@ -11,7 +11,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST="${1:-/home/pi/meso}"
 
-echo "Installing meso-pi v1.0.1 to $DEST"
+echo "Installing meso-pi v1.0.2 to $DEST"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "ERROR: python3 not found. Install it first (sudo apt install python3)."
@@ -50,20 +50,30 @@ else
     } >> "$DEST/meso.conf"
     echo "Added SEVERE_STATE_FILE to $DEST/meso.conf."
   fi
+  # v1.0.2 adds ALERT_ZONE. Append it to an older config that lacks it.
+  if ! grep -q "^ALERT_ZONE=" "$DEST/meso.conf"; then
+    {
+      echo ""
+      echo "# NWS alert zone for the independent severe check (added by"
+      echo "# the v1.0.2 installer). Blank means derive it from the GPS."
+      echo "ALERT_ZONE="
+    } >> "$DEST/meso.conf"
+    echo "Added ALERT_ZONE to $DEST/meso.conf."
+  fi
 fi
 
 # Install cron entries, preserving any other cron jobs.
 TMP_CRON="$(mktemp)"
 sed "s|__HOME__|$DEST|g" "$SRC/meso.cron" > "$TMP_CRON"
 if command -v crontab >/dev/null 2>&1; then
-  if crontab -l 2>/dev/null | grep -v "meso-submit.py" > "$TMP_CRON.existing"; then
+  if crontab -l 2>/dev/null | grep -v -E "meso-submit.py|meso-severe-check.py" > "$TMP_CRON.existing"; then
     cat "$TMP_CRON.existing" "$TMP_CRON" | crontab -
   else
     crontab "$TMP_CRON"
   fi
   rm -f "$TMP_CRON" "$TMP_CRON.existing"
   echo "Cron installed:"
-  crontab -l | grep -E "meso-submit" || true
+  crontab -l | grep -E "meso-submit|meso-severe-check" || true
 else
   cp "$TMP_CRON" "$DEST/meso.cron.installed"
   rm -f "$TMP_CRON"

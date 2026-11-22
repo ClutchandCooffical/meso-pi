@@ -34,7 +34,7 @@ STATE_DIR = os.path.join(HOME, "state")
 SHADOW_DIR = os.path.join(HOME, "shadow")
 LOG_DIR = os.path.join(HOME, "log")
 
-USER_AGENT = "meso-pi/1.0.1 (Midwest Meso Reporting submitter)"
+USER_AGENT = "meso-pi/1.0.2 (Midwest Meso Reporting submitter)"
 
 # The Meso conditions dropdown. The station's free-form condition text is
 # mapped onto one of these by map_condition().
@@ -65,6 +65,11 @@ DEFAULTS = {
     # this file says severe mode is active. Set it to another path, or
     # blank to disable severe-mode submissions, in meso.conf.
     "SEVERE_STATE_FILE": "/home/pi/wx-brief/state/severe-mode-state.json",
+    # NWS alert zone for the severe check (e.g. MOC083). Blank means
+    # derive it from LATITUDE/LONGITUDE via api.weather.gov/points/
+    # (cached in state/nws-zone.json). Set it explicitly if the
+    # derivation fails or you already know your zone.
+    "ALERT_ZONE": "",
 }
 
 
@@ -123,21 +128,107 @@ def read_password(path):
 
 
 def severe_mode_active(cfg):
-    """Is severe weather mode active, per the wx-brief-pi state file?
+    """Is severe weather mode active?
 
-    Reads cfg["SEVERE_STATE_FILE"] (default: the standard wx-brief-pi
-    location) and returns True only when it parses as JSON with
-    {"active": true}. Anything else — missing file, bad JSON, blank path,
-    active false — is not severe. Fails closed: when we cannot tell,
-    we do not submit on the severe-only runs.
+    Checks two sources; either one saying active is enough:
+      1. cfg["SEVERE_STATE_FILE"] — the wx-brief-pi severe-mode state
+         (default: the standard wx-brief-pi location). A JSON file with
+         {"active": true}.
+      2. meso-pi's own state/severe-mode.json, written by
+         meso-severe-check.py (the independent SPC + NWS alerts check).
+    Anything else — missing file, bad JSON, blank path, active false —
+    is not severe. Fails closed: when we cannot tell, we do not submit
+    on the severe-only runs.
     """
+    # Source 1: wx-brief-pi's state file.
     path = (cfg.get("SEVERE_STATE_FILE") or "").strip()
-    if not path:
-        return False
-    data = read_json_file(path)
-    if not isinstance(data, dict):
-        return False
-    return data.get("active") is True
+    if path:
+        data = read_json_file(path)
+        if isinstance(data, dict) and data.get("active") is True:
+            return True
+    # Source 2: meso-pi's own independent severe check.
+    own = read_json_file(os.path.join(STATE_DIR, "severe-mode.json"))
+    if isinstance(own, dict) and own.get("active") is True:
+        return True
+    return False
+
+
+def fetch_text(url, timeout=25, attempts=3, pause=3):
+    """GET a URL as text, retrying transient failures. Raises on failure."""
+    last = "unknown"
+    for _ in range(attempts):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            last = f"{type(e).__name__}: {e}"
+            time.sleep(pause)
+    raise RuntimeError(f"fetch failed ({url}): {last}")
+
+
+def fetch_json(url, timeout=25, attempts=3, pause=3):
+    """GET a URL and parse it as JSON. Raises on failure."""
+    return json.loads(fetch_text(url, timeout=timeout, attempts=attempts,
+                                 pause=pause))
+
+
+def discover_zone(cfg):
+    """Resolve the NWS county alert zone for the station GPS.
+
+    Uses cfg["ALERT_ZONE"] when set. Otherwise derives it from
+    LATITUDE/LONGITUDE via api.weather.gov/points/ (the county zone in
+    the response properties) and caches it in state/nws-zone.json for
+    7 days. Coordinates are rounded to 4 decimals: the NWS API rejects
+    higher precision with a 301. Returns the zone id (e.g. "MOC083").
+    Raises RuntimeError when it cannot be resolved.
+    """
+    override = (cfg.get("ALERT_ZONE") or "").strip()
+    if override:
+        return override
+    cache = os.path.join(STATE_DIR, "nws-zone.json")
+    cached = read_json_file(cache)
+    if cached and time.time() - cached.get("at", 0) < 7 * 86400:
+        zone = cached.get("zone")
+        if zone:
+            return zone
+    try:
+        lat = float(cfg["LATITUDE"])
+        lon = float(cfg["LONGITUDE"])
+    except (ValueError, TypeError):
+        raise RuntimeError("LATITUDE/LONGITUDE must be numbers to "
+                           "derive the NWS alert zone")
+    url = (f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}")
+    data = fetch_json(url, attempts=2)
+    county = (data.get("properties") or {}).get("county") or ""
+    zone = county.rstrip("/").split("/")[-1] if county else ""
+    if not zone:
+        raise RuntimeError("NWS /points/ returned no county zone")
+    os.makedirs(STATE_DIR, exist_ok=True)
+    write_json_file(cache, {"at": time.time(), "zone": zone})
+    return zone
+
+
+def nws_alerts(cfg):
+    """Active NWS alerts for the station's county zone.
+
+    Returns a list of dicts with event, severity, headline, ends.
+    Raises RuntimeError when the zone cannot be resolved or the
+    alerts fetch fails.
+    """
+    zone = discover_zone(cfg)
+    url = f"https://api.weather.gov/alerts/active?zone={zone}"
+    data = fetch_json(url, attempts=2)
+    out = []
+    for f in data.get("features", []):
+        p = f["properties"]
+        out.append({
+            "event": p.get("event", ""),
+            "severity": p.get("severity", ""),
+            "headline": p.get("headline", ""),
+            "ends": p.get("ends") or p.get("expires") or "",
+        })
+    return out
 
 
 # ---------------------------------------------------------------- station

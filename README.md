@@ -1,4 +1,4 @@
-# meso-pi v1.0.1
+# meso-pi v1.0.2
 
 Submit your weather station's readings to the **Midwest Meso Reporting** app
 (https://weather-reporter-midwestmesoproject.replit.app/) automatically,
@@ -33,9 +33,8 @@ form's prefilled defaults and never guesses a value.
 
 - It does not replace the Meso website. You still need your WXID and station
   password from the Meso group, and you can always check your records there.
-- It does not read SPC outlooks or NWS alerts itself. Severe mode comes
-  from wx-brief-pi's severe-mode state file (see "Severe weather" below);
-  without it, submissions stay on the four-a-day schedule.
+- It does not write weather briefs. Severe mode comes from the SPC outlook
+  and NWS alerts (see "Severe weather" below), not from a brief.
 - It does not share anything. Your password stays on your machine, in a file
   only you can read, and the package never prints it.
 
@@ -54,17 +53,18 @@ form's prefilled defaults and never guesses a value.
 ## Install
 
 ```sh
-tar xzf meso-pi-v1.0.1.tar.gz
-cd meso-pi-v1.0.1
+tar xzf meso-pi-v1.0.2.tar.gz
+cd meso-pi-v1.0.2
 ./install.sh            # installs to /home/pi/meso
 ./install.sh /opt/meso  # or another directory
 ```
 
 The installer copies the scripts, creates `meso.conf` from the example
 (`LIVE_SUBMIT=false`, shadow mode), and installs the cron entries: four
-brief-time runs a day (05:12, 10:12, 15:12, 20:12 local) plus an hourly
-severe-mode run. It never overwrites an existing `meso.conf`; on an
-upgrade it appends the new `SEVERE_STATE_FILE` setting if it is missing.
+brief-time runs a day (05:12, 10:12, 15:12, 20:12 local), an hourly
+severe-mode run, and a 30-minute severe-mode watchdog. It never
+overwrites an existing `meso.conf`; on an upgrade it appends any new
+settings that are missing.
 
 ## Configure
 
@@ -81,7 +81,8 @@ Edit `meso.conf` and fill in your own values:
 | `PASSWORD_FILE` | Where the station password lives. Leave the default. |
 | `LIVE_SUBMIT` | `false` until you have tested (shadow mode). Flip to `true` for cutover. |
 | `MIN_INTERVAL_MINUTES` | Minimum minutes between submissions. Default 50. |
-| `SEVERE_STATE_FILE` | Path to a JSON file with `{"active": true/false}` that says whether severe weather mode is on. Default is the standard wx-brief-pi location. The hourly severe run only submits while it is active. Leave blank to disable severe-mode submissions. |
+| `SEVERE_STATE_FILE` | Path to a JSON file with `{"active": true/false}` that says whether severe weather mode is on. Default is the standard wx-brief-pi location. Checked alongside meso-pi's own `state/severe-mode.json`; either one saying active is enough. Leave blank to rely only on meso-pi's own check. |
+| `ALERT_ZONE` | NWS county alert zone for the independent severe check, e.g. `MOC083`. Leave blank to derive it from `LATITUDE`/`LONGITUDE` via api.weather.gov/points/ (cached in `state/nws-zone.json`). |
 | `MESO_BASE_URL` | The Meso app address. Change only if the app moves. |
 
 Then set the password (it is read silently, never echoed, stored mode 0600):
@@ -175,15 +176,30 @@ cron entry keeps running but submits nothing.
 The normal cadence is four submissions a day, after the 05:00, 10:00,
 15:00, and 20:00 briefs. While severe weather mode is active, an hourly
 cron entry also runs `meso-submit.py --require-severe`, which submits
-once an hour. Severe mode is read from `SEVERE_STATE_FILE` (default:
-the wx-brief-pi severe-mode state file, `/home/pi/wx-brief/state/
-severe-mode-state.json`). If that file is missing, unreadable, or says
-severe mode is not active, the severe runs skip silently. The 50-minute
-minimum interval still applies unless you pass `--force`, so do not
-lower `MIN_INTERVAL_MINUTES` below 50 without checking with the Meso
-group first. If you do not run wx-brief-pi, point `SEVERE_STATE_FILE`
-at your own severe-mode state file, or leave it blank and the package
-stays on the four-a-day schedule.
+once an hour.
+
+Severe mode is checked two ways, and either one saying active is enough:
+
+1. **wx-brief-pi's state file** (`SEVERE_STATE_FILE`, default
+   `/home/pi/wx-brief/state/severe-mode-state.json`), when you run
+   wx-brief-pi.
+2. **meso-pi's own check.** Every 30 minutes, `meso-severe-check.py`
+   reads the SPC Day 1 Convective Outlook (exact point-in-polygon for
+   your station GPS) and the NWS alerts for your county zone, and writes
+   `state/severe-mode.json`. It activates on SPC categorical risk
+   Marginal or higher, any tornado/wind/hail probability contour
+   containing the station, or any active severe thunderstorm / tornado /
+   flash flood watch or warning. The alert zone is derived from your GPS
+   via api.weather.gov/points/ (cached in `state/nws-zone.json`), or
+   taken from `ALERT_ZONE` when set. A failed SPC read never changes the
+   state, and a station within 0.25 degrees of a contour is flagged as
+   edge-uncertain rather than guessed.
+
+So a station without wx-brief-pi still gets hourly submissions in severe
+weather, from meso-pi's own check. The 50-minute minimum interval still
+applies unless you pass `--force`, so do not lower
+`MIN_INTERVAL_MINUTES` below 50 without checking with the Meso group
+first.
 
 ## Files
 
@@ -191,14 +207,19 @@ stays on the four-a-day schedule.
 |---|---|
 | `scripts/meso-submit.py` | The submitter. Run by cron, or by hand. |
 | `scripts/meso-check.py` | Read-only setup check (config, station, API, password file). |
-| `scripts/mesocommon.py` | Config, station readers, mapping, Meso API client. |
+| `scripts/meso-severe-check.py` | Severe-mode watchdog. Every 30 min, checks SPC + NWS alerts and writes `state/severe-mode.json`. |
+| `scripts/meso_spc.py` | SPC Day 1 areal-outline parser and point-in-polygon test. |
+| `scripts/mesocommon.py` | Config, station readers, mapping, Meso API client, NWS zone/alerts. |
 | `set-password.sh` | Stores the station password (mode 0600, never echoed). |
 | `meso.conf` | Your configuration (created by install.sh, never overwritten). |
 | `meso.conf.example` | The config template with every setting documented. |
-| `meso.cron` | The cron entries installed by install.sh (4 brief-time runs a day plus an hourly severe-mode run). |
+| `meso.cron` | The cron entries installed by install.sh (4 brief-time runs a day, an hourly severe-mode run, and a 30-minute severe-mode watchdog). |
 | `state/meso-last.json` | Watermark: last successful submission time and values. |
+| `state/severe-mode.json` | Severe-mode state from meso-severe-check.py. |
+| `state/nws-zone.json` | Cached NWS alert zone derived from the station GPS. |
 | `shadow/last-dry-run.json` | The most recent dry-run payload. |
 | `log/meso-submit.log` | Cron output from meso-submit.py. |
+| `log/meso-severe-check.log` | Cron output from meso-severe-check.py. |
 
 ## Troubleshooting
 
@@ -239,8 +260,26 @@ stays on the four-a-day schedule.
   If you suspect it leaked, change it on the Meso app (there is a password
   change on the station settings page) and re-run `./set-password.sh`.
 
+- **"SEVERE CHECK: SPC unverified"** — the SPC outlook could not be read,
+  so the severe state was left unchanged. Check that spc.noaa.gov loads.
+  The next 30-minute run retries.
+- **"SEVERE CHECK: NWS alerts fetch failed"** — the alerts fetch failed,
+  so the SPC result alone decided. If it keeps failing, check that
+  api.weather.gov loads, and that `ALERT_ZONE` is right (or blank, to
+  derive it from the GPS).
+
 ## Version history
 
+- **v1.0.2 (Nov 21, 2026)** — Independent severe check. meso-pi no longer
+  depends on wx-brief-pi for severe mode: `meso-severe-check.py` runs
+  every 30 minutes, reads the SPC Day 1 outlook (exact point-in-polygon)
+  and the NWS alerts for the station's county zone (derived from the GPS
+  via api.weather.gov/points/, cached, or `ALERT_ZONE` when set), and
+  writes `state/severe-mode.json`. The hourly `--require-severe` run
+  submits when either that file or wx-brief-pi's state file says severe
+  mode is active. New `scripts/meso-spc.py` (SPC parser, ported from
+  wx-brief-pi). The installer appends `ALERT_ZONE` to an existing
+  meso.conf and strips both meso cron entries on reinstall.
 - **v1.0.1 (Nov 21, 2026)** — Cadence fix. v1.0.0 submitted once an hour,
   every hour. v1.0.1 submits four times a day (after the 05:00, 10:00,
   15:00, and 20:00 briefs), plus hourly while severe weather mode is

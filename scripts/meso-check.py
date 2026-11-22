@@ -35,6 +35,9 @@ def main():
     print(f"  source:  {cfg['SOURCE']}")
     print(f"  live submit: {cfg['LIVE_SUBMIT']}")
     print(f"  severe state file: {cfg.get('SEVERE_STATE_FILE') or '(not set)'}")
+    own_severe = mc.read_json_file(os.path.join(mc.STATE_DIR, "severe-mode.json")) or {}
+    print(f"  own severe check: {own_severe.get('active')} "
+          f"(last threat: {own_severe.get('last_threat') or 'none'})")
     print(f"  severe mode active: {mc.severe_mode_active(cfg)}")
     print()
 
