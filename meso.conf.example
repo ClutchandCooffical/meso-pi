@@ -1,0 +1,49 @@
+# meso.conf — copy to meso.conf and fill in your own values.
+# Lines starting with # are comments. Values may be quoted.
+# __HOME__ is replaced with the install directory by install.sh.
+
+# Your station's WXID on the Midwest Meso Reporting app, e.g. MMP-MO-N7.
+# Find it in the "Reporting WXID" dropdown on the Meso app.
+WXID=
+
+# The Meso app. Change only if the app moves to a new address.
+MESO_BASE_URL=https://weather-reporter-midwestmesoproject.replit.app
+
+# Where the station password lives. Run ./set-password.sh to create it.
+# The file is mode 0600 and the password is never printed.
+PASSWORD_FILE=__HOME__/.meso-password
+
+# How this install gets its readings. One of:
+#   weewx  - scrape a WeeWX Belchertown homepage (STATION_URL below)
+#   json   - read a JSON file (STATION_JSON below)
+#   args   - pass readings on the meso-submit.py command line
+SOURCE=weewx
+
+# Your weather station homepage (SOURCE=weewx). Must be a WeeWX
+# Belchertown skin page, the same kind wx-brief-pi reads.
+STATION_URL=
+
+# Path to a JSON file with the readings (SOURCE=json). Keys:
+#   temp, humidity, wspd (required numbers)
+#   wdir, pressure, rain, cond (optional; see the README)
+STATION_JSON=
+
+# Your station's fixed GPS coordinates. The station does not move.
+LATITUDE=
+LONGITUDE=
+
+# Notes posted with every reading. Use your own attribution, e.g.:
+#   data gathered and entered from https://your-station.example.com by Your Name
+NOTES=
+
+# false = shadow mode: build the payload, print it, submit nothing.
+# true  = live: unlock the WXID and submit the reading.
+# Start false, test, then flip to true for cutover.
+LIVE_SUBMIT=false
+
+# Minimum minutes between submissions. The Meso group asks for no more
+# than one reading per 50 minutes from a station.
+MIN_INTERVAL_MINUTES=50
+
+# Where the last-submission watermark lives.
+STATE_FILE=__HOME__/state/meso-last.json

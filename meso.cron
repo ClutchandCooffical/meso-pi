@@ -1,0 +1,6 @@
+# meso-pi cron entries. __HOME__ is replaced with the install directory
+# by install.sh. Times are the Pi's local time.
+# Submit a reading once an hour, at :12 past the hour. The script itself
+# enforces the 50-minute minimum interval, so a run that lands too soon
+# after the last submission skips quietly.
+12 * * * * python3 __HOME__/scripts/meso-submit.py >> __HOME__/log/meso-submit.log 2>&1
